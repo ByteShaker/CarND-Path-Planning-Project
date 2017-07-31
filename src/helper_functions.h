@@ -13,6 +13,10 @@
 
 using namespace std;
 
+int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y);
+int NextWaypoint(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y);
+
+constexpr double pi();
 double deg2rad(double x);
 double rad2deg(double x);
 vector<double> getFrenet(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y);

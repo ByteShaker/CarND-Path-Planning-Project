@@ -69,7 +69,10 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  PP pp = PP();
+  pp.init_map(map_waypoints_s, map_waypoints_x, map_waypoints_y, map_waypoints_dx, map_waypoints_dy);
+
+  h.onMessage([&pp](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -105,39 +108,37 @@ int main() {
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
-            for(int i = 0; i < sensor_fusion.size(); i++){
 
-                cout << sensor_fusion[i] << endl;
-            }
+            vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed};
 
-            //cout << sensor_fusion << endl;
-            PP pp = PP();
+            pp.update_car_status(car_status);
+
             pp.predict(sensor_fusion);
+            pp.behaviour_planning();
+            pp.create_trajectory(previous_path_x, previous_path_y);
 
           	json msgJson;
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
-
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-			double dist_inc = 0.5;
-
-			for(int i = 0; i < 50; i++)
-			{
-				vector<double> nextXY = getXY(car_s+(dist_inc*i),car_d,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-				next_x_vals.push_back(nextXY[0]);
-				next_y_vals.push_back(nextXY[1]);
-			}
+            for(int i=0; i<pp.trajectory.size(); i++){
+                vector<double> next_point = pp.trajectory[i];
+                next_x_vals.push_back(next_point[0]);
+                next_y_vals.push_back(next_point[3]);
+            }
 
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
+
+            //this_thread::sleep_for(chrono::milliseconds(500));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
+            //this_thread::sleep_for(chrono::milliseconds(50));
+
+
         }
       } else {
         // Manual driving
