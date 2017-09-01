@@ -44,8 +44,6 @@ int main() {
 
   // Waypoint map to read from
   string map_file_ = "../data/highway_map.csv";
-  // The max s value before wrapping around the track back to 0
-  double max_s = 6945.554;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -119,17 +117,8 @@ int main() {
 
           	json msgJson;
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
-
-            for(int i=0; i<pp.trajectory.size(); i++){
-                vector<double> next_point = pp.trajectory[i];
-                next_x_vals.push_back(next_point[0]);
-                next_y_vals.push_back(next_point[3]);
-            }
-
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+          	msgJson["next_x"] = pp.next_vals[0];
+          	msgJson["next_y"] = pp.next_vals[1];
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 

@@ -15,6 +15,7 @@
 
 #include "helper_functions.h"
 #include "json.hpp"
+#include "spline.h"
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
@@ -28,6 +29,7 @@ class PP {
 public:
 
     int number_of_points;
+    double speed_limit;
 
     vector<double> maps_s;
     vector<double> maps_x;
@@ -42,6 +44,7 @@ public:
     double car_yaw;
     double car_speed;
     double car_acceleration;
+    int car_lane_id;
 
     double goal_x;
     double goal_y;
@@ -53,10 +56,12 @@ public:
 
     vector<string> states = {"KL","LCL","LCR","PLCL","PLCR"};
 
-    map<int, vector<double>> predictions;
-    string current_behaviour = "KL";
+    vector<vector<vector<double>>> predictions = {{},{},{}};
+    double behaviour_speed = 2.0;
+    int behaviour_lane_id;
 
     vector<vector<double>> trajectory;
+    vector<vector<double>> next_vals;
 
     /**
      * Constructor
@@ -73,7 +78,7 @@ public:
     vector<double> JMT(vector< double> start, vector <double> end, double T);
 
     void update_car_status(vector<double> car_status);
-    void define_goal_state(vector<double> initial_state,int current_path_point);
+    void define_goal_state(vector<double> initial_state);
 
     /** Predict Movement of other cars */
     void predict(json sensor_fusion);

@@ -111,10 +111,13 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 {
     int prev_wp = -1;
 
+
     while(s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1) ))
     {
         prev_wp++;
     }
+
+
 
     int wp2 = (prev_wp+1)%maps_x.size();
 
