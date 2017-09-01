@@ -111,22 +111,21 @@ int main() {
 
             pp.update_car_status(car_status);
 
-            pp.predict(sensor_fusion);
-            pp.behaviour_planning();
+            pp.predict(sensor_fusion, previous_path_x.size());
+            pp.behaviour_planning(end_path_s, end_path_d, previous_path_x.size());
+
             pp.create_trajectory(previous_path_x, previous_path_y);
 
           	json msgJson;
 
-          	msgJson["next_x"] = pp.next_vals[0];
-          	msgJson["next_y"] = pp.next_vals[1];
+            msgJson["next_x"] = pp.trajectory_x;
+            msgJson["next_y"] = pp.trajectory_y;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-
             //this_thread::sleep_for(chrono::milliseconds(500));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-            //this_thread::sleep_for(chrono::milliseconds(50));
-
+            this_thread::sleep_for(chrono::milliseconds(50));
 
         }
       } else {

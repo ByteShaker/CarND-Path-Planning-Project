@@ -61,7 +61,8 @@ public:
     int behaviour_lane_id;
 
     vector<vector<double>> trajectory;
-    vector<vector<double>> next_vals;
+    vector<double> trajectory_x;
+    vector<double> trajectory_y;
 
     /**
      * Constructor
@@ -81,10 +82,10 @@ public:
     void define_goal_state(vector<double> initial_state);
 
     /** Predict Movement of other cars */
-    void predict(json sensor_fusion);
+    void predict(json sensor_fusion, int prev_size);
 
     /** Plan Behaviour of own car*/
-    void behaviour_planning();
+    void behaviour_planning(double end_path_s, double end_path_d, int prev_size);
 
     /** Create Trajectory of own car*/
     void create_trajectory(json previous_path_x, json previous_path_y);

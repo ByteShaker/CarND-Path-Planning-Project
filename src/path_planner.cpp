@@ -8,7 +8,7 @@
  * Initialize PP
  */
 PP::PP() {
-    this->speed_limit = 21.0;
+    this->speed_limit = 49.5; //mph
 
     this->car_x = 0.0;
     this->car_y = 0.0;
@@ -18,21 +18,34 @@ PP::PP() {
     this->car_speed = 0.0;
     this->car_acceleration = 0.0;
 
-    this->number_of_points = 49;
+    this->number_of_points = 50;
+    this->car_lane_id = 1;
+
+    this->goal_speed = 0.0;
+
 }
 
 PP::~PP() {}
 
 void PP::init_map(vector<double> maps_s, vector<double> maps_x, vector<double> maps_y, vector<double> maps_dx, vector<double> maps_dy){
 
+
+    this->maps_x = maps_x;
+    this->maps_y = maps_y;
+    this->maps_s = maps_s;
+    this->maps_dx = maps_dx;
+    this->maps_dy = maps_dy;
+
+    /*
     // Spline interpolate the map waypoints
     vector<double> waypoint_spline_t = {};
     int map_waypoints_size = maps_x.size();
     for (int i=0; i<map_waypoints_size; i++)
     {
-        double t = (double)i / (double)map_waypoints_size;
-        waypoint_spline_t.push_back(t);
+       double t = (double)i / (double)map_waypoints_size;
+       waypoint_spline_t.push_back(t);
     }
+
 
     tk::spline waypoint_spline_x;
     waypoint_spline_x.set_points(waypoint_spline_t, maps_x);
@@ -45,15 +58,16 @@ void PP::init_map(vector<double> maps_s, vector<double> maps_x, vector<double> m
     tk::spline waypoint_spline_dy;
     waypoint_spline_dy.set_points(waypoint_spline_t, maps_dy);
 
-    for (int i=0; i<10000; i++)
+    for (int i=0; i<1000; i++)
     {
-        double t = (double)i / (double)10000;
-        this->maps_x.push_back(waypoint_spline_x(t));
-        this->maps_y.push_back(waypoint_spline_y(t));
-        this->maps_s.push_back(waypoint_spline_s(t));
-        this->maps_dx.push_back(waypoint_spline_dx(t));
-        this->maps_dy.push_back(waypoint_spline_dy(t));
+       double t = (double)i / (double)1000;
+       this->maps_x.push_back(waypoint_spline_x(t));
+       this->maps_y.push_back(waypoint_spline_y(t));
+       this->maps_s.push_back(waypoint_spline_s(t));
+       this->maps_dx.push_back(waypoint_spline_dx(t));
+       this->maps_dy.push_back(waypoint_spline_dy(t));
     }
+    */
 }
 
 void PP::update_car_status(vector<double> car_status){
@@ -87,53 +101,72 @@ void PP::define_goal_state(vector<double> initial_state){
     cout << rad2deg(this->car_yaw) << " " << rad2deg(theta) << endl;
 }
 
-void PP::predict(json sensor_fusion) {
+void PP::predict(json sensor_fusion, int prev_size) {
+
+    this->predictions[0].erase(this->predictions[0].begin(), this->predictions[0].end());
+    this->predictions[1].erase(this->predictions[1].begin(), this->predictions[1].end());
+    this->predictions[2].erase(this->predictions[2].begin(), this->predictions[2].end());
+
     for(int i = 0; i < sensor_fusion.size(); i++){
 
-        //cout << sensor_fusion[i][1].get<double>() << endl;
-
-        this->predictions.erase(this->predictions.begin(), this->predictions.end());
-
+        double x = sensor_fusion[i][1];
+        double y = sensor_fusion[i][2];
         double vx = sensor_fusion[i][3];
         double vy = sensor_fusion[i][4];
-        double next_x = sensor_fusion[i][1].get<double>() + vx*1.0;
-        double next_y = sensor_fusion[i][2].get<double>() + vy*1.0;
-        double theta = atan2(vy,vx);
+        double s = sensor_fusion[i][5];
+        double d = sensor_fusion[i][6];
 
-        vector<double>next_frenet = getFrenet(next_x, next_y, theta, this->maps_x, this->maps_y);
-        int lane_id = (int)(((next_frenet[1] - 2.0) / 4.0) + 0.5);
+        double speed = sqrt((vx*vx)+(vy*vy));
+        double next_x = x + (vx * (double)prev_size * 0.02);
+        double next_y = y + (vy * (double)prev_size * 0.02);
+        double next_s = s + speed * 1.0;
+        //double theta = atan2(vy,vx);
+
+        int lane_id = (int)(((d - 2.0) / 4.0) + 0.5);
         //cout << lane_id << endl;
 
-        vector<double> prediction = {next_x, next_y, vx, vy, next_frenet[0], next_frenet[1]};
+        vector<double> prediction = {next_x, next_y, next_s, speed, vx, vy};
 
         this->predictions[lane_id].push_back(prediction);
-
-
 
         //cout << sensor_fusion[i][5].get<double>() << " " << next_frenet[0] << endl;
     }
 }
 
-void PP::behaviour_planning(){
+void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size){
     /** vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed}; */
 
     double max_s = 6945.554;
 
+    if(prev_size > 0){
+        this->car_s = end_path_s;
+        this->car_d = end_path_d;
+        this->car_lane_id = (int)(((this->car_d - 2.0) / 4.0) + 0.5);
+    }
+
     int next_vehicle_in_lane_id;
     double next_vehicle_in_lane_s = max_s;
-
     for(int i=0; i<this->predictions[this->car_lane_id].size(); i++){
-        double delta_d = this->predictions[this->car_lane_id][i][5]-this->car_d;
-        double delta_s = fmod((this->predictions[this->car_lane_id][i][4]-this->car_s+max_s),max_s);
+        double delta_s = (this->predictions[this->car_lane_id][i][2]-this->car_s);
+        if(delta_s < -max_s/2.0){
+            delta_s += max_s;
+        }
 
-        if(abs(delta_d) < 2.0){
-            if(delta_s<next_vehicle_in_lane_s){
-                next_vehicle_in_lane_id = i;
-                next_vehicle_in_lane_s = delta_s;
-            }
+        if((delta_s>0.0)&&(delta_s < next_vehicle_in_lane_s)){
+            next_vehicle_in_lane_s = delta_s;
         }
     }
 
+    cout << this->car_lane_id << " " << this->predictions[1].size() << endl;
+
+    if (next_vehicle_in_lane_s < 30.0){
+        this->goal_speed -= .225;
+        //this->car_lane_id -= 1;
+    }else if(this->goal_speed < this->speed_limit){
+        this->goal_speed += .225;
+    }
+
+    /*
     this->behaviour_speed += 0.2;
     if(this->behaviour_speed > this->speed_limit){
         this->behaviour_speed = this->speed_limit;
@@ -148,9 +181,7 @@ void PP::behaviour_planning(){
             this->behaviour_lane_id = 0;
         }
     }
-
-
-
+    */
 
 }
 
@@ -158,93 +189,94 @@ void PP::create_trajectory(json previous_path_x, json previous_path_y){
     /** vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed}; */
 
     int current_path_point = this->number_of_points - previous_path_x.size();
+    cout << "NEW TRAJECTORY after: " << current_path_point << " Points" << endl;
 
-    if(current_path_point>10){
-        cout << "NEW TRAJECTORY after: " << current_path_point << " Points" << endl;
+    vector<double> waypoints_x;
+    vector<double> waypoints_y;
 
-        double dt = (1.0 / 50.0);
+    double last_ref_x;
+    double last_ref_y;
+    double ref_x;
+    double ref_y;
+    double ref_yaw;
 
-        if(this->trajectory.size() == 0){
-            this->trajectory.push_back({this->car_s, this->car_speed, 0.0, this->car_d, 0.0, 0.0});
-        }else{
-            this->trajectory.erase(this->trajectory.begin(), this->trajectory.begin()+current_path_point);
-        }
+    if(current_path_point > 48){
+        last_ref_x = this->car_x - cos(this->car_yaw);
+        last_ref_y = this->car_y - sin(this->car_yaw);
 
-        cout << "Tracjectory Size: " << this->trajectory.size() << endl;
+        ref_x = this->car_x;
+        ref_y = this->car_y;
+        ref_yaw = this->car_yaw;
 
-        this->define_goal_state(this->trajectory.back());
+        //this->trajectory_x.push_back(ref_x);
+        //this->trajectory_y.push_back(ref_y);
 
-        vector<double> initial_s_state = {this->trajectory.back()[0], this->trajectory.back()[1], this->trajectory.back()[2]};
-        vector<double> final_s_state = {this->goal_s, this->behaviour_speed, 0.0};
+    }else{
+        last_ref_x = this->trajectory_x[50-2];
+        last_ref_y = this->trajectory_y[50-2];
 
-        vector<double> initial_d_state = {this->trajectory.back()[3], this->trajectory.back()[4], this->trajectory.back()[5]};
-        vector<double> final_d_state = {this->goal_d, 0.0, 0.0};
-
-        cout << "Init Speed: " << this->trajectory.back()[1] << " Goal Speed: " << this->goal_speed << endl;
-
-        vector<double> s_coeffs = this->JMT(initial_s_state, final_s_state, 1.0);
-        vector<double> d_coeffs = this->JMT(initial_d_state, final_d_state, 1.0);
-
-
-        for(int i=1; i<=current_path_point; i++){
-
-            double t = dt * (double)i;
-
-            double s_t = 0.0;
-            for(int coeff=0; coeff<6; coeff++){
-                s_t += s_coeffs[coeff] * pow(t, (double)coeff);
-            }
-
-            double d_s_t = 0.0;
-            for(int coeff=1; coeff<6; coeff++){
-                d_s_t += s_coeffs[coeff] * (double)coeff * pow(t, (double)(coeff-1));
-            }
-
-            double dd_s_t = 0.0;
-            for(int coeff=2; coeff<6; coeff++){
-                dd_s_t += s_coeffs[coeff] * ((double)coeff * (double)(coeff-1)) * pow(t, (double)(coeff-2));
-            }
-
-            double d_t = 0.0;
-            for(int coeff=0; coeff<6; coeff++){
-                d_t += d_coeffs[coeff] * pow(t, (double)coeff);
-            }
-
-            double d_d_t = 0.0;
-            for(int coeff=1; coeff<6; coeff++){
-                d_d_t += d_coeffs[coeff] * (double)coeff * pow(t, (double)(coeff-1));
-            }
-
-            double dd_d_t = 0.0;
-            for(int coeff=2; coeff<6; coeff++){
-                dd_d_t += d_coeffs[coeff] * ((double)coeff * (double)(coeff-1)) * pow(t, (double)(coeff-2));
-            }
-
-            this->trajectory.push_back({s_t, d_s_t, dd_s_t, d_t, d_d_t, dd_d_t});
-        }
-        this->number_of_points = this->trajectory.size();
-        cout << "Tracjectory Size to drive: " << this->trajectory.size() << endl;
-
-
-        vector<double> next_x_vals;
-        vector<double> next_y_vals;
-
-        // The max s value before wrapping around the track back to 0
-        double max_s = 6945.554;
-
-
-        for(int i=0; i<this->number_of_points; i++){
-            double s_temp = fmod(this->trajectory[i][0],max_s);
-            vector<double> next_point = getXY(s_temp, this->trajectory[i][3], this->maps_s, this->maps_x, this->maps_y);
-            next_x_vals.push_back(next_point[0]);
-            next_y_vals.push_back(next_point[1]);
-        }
-        this->next_vals.erase(this->next_vals.begin(), this->next_vals.end());
-        this->next_vals.push_back(next_x_vals);
-        this->next_vals.push_back(next_y_vals);
-
+        ref_x = this->trajectory_x[50-1];
+        ref_y = this->trajectory_y[50-1];
+        ref_yaw = atan2(ref_y-last_ref_y,ref_x-last_ref_x);
     }
 
+    waypoints_x.push_back(last_ref_x);
+    waypoints_y.push_back(last_ref_y);
+
+    waypoints_x.push_back(ref_x);
+    waypoints_y.push_back(ref_y);
+
+    vector<double> next_waypoint_30 = getXY(this->car_s+30, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    waypoints_x.push_back(next_waypoint_30[0]);
+    waypoints_y.push_back(next_waypoint_30[1]);
+
+    vector<double> next_waypoint_60 = getXY(this->car_s+60, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    waypoints_x.push_back(next_waypoint_60[0]);
+    waypoints_y.push_back(next_waypoint_60[1]);
+
+    vector<double> next_waypoint_90 = getXY(this->car_s+90, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    waypoints_x.push_back(next_waypoint_90[0]);
+    waypoints_y.push_back(next_waypoint_90[1]);
+
+
+    for (int i=0;i<waypoints_x.size();i++){
+        double shift_x = waypoints_x[i] - ref_x;
+        double shift_y = waypoints_y[i] - ref_y;
+
+        waypoints_x[i] = shift_x * cos(-ref_yaw) - shift_y * sin(-ref_yaw);
+        waypoints_y[i] = shift_x * sin(-ref_yaw) + shift_y * cos(-ref_yaw);
+    }
+
+    // create a spline
+    tk::spline s;
+    s.set_points(waypoints_x,waypoints_y);
+
+    if(this->trajectory_x.size() > 0){
+        this->trajectory_x.erase(this->trajectory_x.begin(), this->trajectory_x.begin()+current_path_point);
+        this->trajectory_y.erase(this->trajectory_y.begin(), this->trajectory_y.begin()+current_path_point);
+    }
+
+    double horizon_x = 30.0;
+    double horizon_y = s(horizon_x);
+    double horizon_dist = sqrt((horizon_x*horizon_x)+(horizon_y*horizon_y));
+
+    double x_counter = 0.0;
+    double delta_x = horizon_x * (0.02 * this->goal_speed / 2.24) / horizon_dist;
+
+    for (int i=1;i<=current_path_point;i++){
+        x_counter = x_counter + delta_x;
+        double y_counter = s(x_counter);
+
+        double next_x = (x_counter * cos(ref_yaw) - y_counter * sin(ref_yaw));
+        double next_y = (x_counter * sin(ref_yaw) + y_counter * cos(ref_yaw));
+
+        next_x += ref_x;
+        next_y += ref_y;
+
+        this->trajectory_x.push_back(next_x);
+        this->trajectory_y.push_back(next_y);
+
+    }
 
 }
 
