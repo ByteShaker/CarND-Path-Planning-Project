@@ -1,4 +1,4 @@
-[video1]: ./Path_Planing_final.m4v
+[video1]: https://youtu.be/pGVMAqtwk_s
 
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
@@ -7,7 +7,7 @@ Solution of Friedrich Schweizer
 
 ##Project Overview
 
-### In [THIS VIDEO](./Path_Planing_final.m4v) you will find the following criteria solved:
+### In [THIS VIDEO](https://youtu.be/pGVMAqtwk_s) you will find the following criteria solved:
  
  + The Car is able to drive at least 4.32 miles without incident.
  
