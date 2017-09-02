@@ -111,10 +111,14 @@ int main() {
 
             pp.update_car_status(car_status);
 
+            //Predict all other vehicles detected by SensorFusion
             pp.predict(sensor_fusion, previous_path_x.size());
+
+            //Plan the behaviour of the EGO-vehicle
             pp.behaviour_planning(end_path_s, end_path_d, previous_path_x.size());
 
-            pp.create_trajectory(previous_path_x, previous_path_y);
+            //Create a smooth trajectory in regard to the given criteria
+            pp.create_trajectory(previous_path_x.size());
 
           	json msgJson;
 
@@ -123,7 +127,6 @@ int main() {
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-            //this_thread::sleep_for(chrono::milliseconds(500));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
             this_thread::sleep_for(chrono::milliseconds(50));
 

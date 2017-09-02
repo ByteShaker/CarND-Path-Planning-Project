@@ -44,7 +44,6 @@ public:
     double car_d;
     double car_yaw;
     double car_speed;
-    double car_acceleration;
     int car_lane_id;
 
     int goal_lane;
@@ -53,9 +52,7 @@ public:
     double goal_y;
     double goal_s;
     double goal_d;
-    double goal_yaw;
     double goal_speed;
-    double goal_acceleration;
 
     vector<string> states = {"KL","LCL","LCR","PLCL","PLCR"};
 
@@ -63,7 +60,6 @@ public:
     double behaviour_speed = 2.0;
     int behaviour_lane_id;
 
-    vector<vector<double>> trajectory;
     vector<double> trajectory_x;
     vector<double> trajectory_y;
 
@@ -92,7 +88,7 @@ public:
     void behaviour_planning(double end_path_s, double end_path_d, int prev_size);
 
     /** Create Trajectory of own car*/
-    void create_trajectory(json previous_path_x, json previous_path_y);
+    void create_trajectory(int prev_size);
 };
 
 

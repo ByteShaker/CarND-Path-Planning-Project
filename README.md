@@ -1,134 +1,247 @@
+[video1]: ./Path_Planing_final
+
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+
+Solution of Friedrich Schweizer
+
+##Project Overview
+
+### In THIS_VIDEO you will find the following criteria solved:
+ 
+ + The Car is able to drive at least 4.32 miles without incident.
+ 
+ + The car drives according to the speed limit.
+ 
+ + Max Acceleration and Jerk are not Exceeded.
+ 
+ + Car does not have collisions.
+ 
+ + The car stays in its lane, except for the time between changing lanes.
+ 
+ + The car is able to change lanes.
+ 
+### General Approach
+
+To solve this project I broke down the main problems into 3 parts:
+
+1. Predict the behaviour of all other vehicles detected by Sensor Fusion
+
+2. Plan the behaviour of the EGO-Vehicle
+
+3. Generate a smooth trajectory based on the given criteria
+
+Following I will describe the main points of my solution.
+
+## Prediction
+
+The track does have 3 lanes. For every detected vehicle I calculated the current lane ID. Also I measured the given leftover trajectory to know how long the new AddOn will be. Based on that time I predicted the future position of the other cars.
+I did this by measuring their speed and calculating their current s value. Based on the Lane ID I created one vector for all vehicles per lane.
+
+    void PP::predict(json sensor_fusion, int prev_size) {
+        /** Predict all other vehicles detected by SensorFusion **/
+        this->predictions[0].erase(this->predictions[0].begin(), this->predictions[0].end());
+        this->predictions[1].erase(this->predictions[1].begin(), this->predictions[1].end());
+        this->predictions[2].erase(this->predictions[2].begin(), this->predictions[2].end());
+    
+        for(int i = 0; i < sensor_fusion.size(); i++){
+    
+            double x = sensor_fusion[i][1];
+            double y = sensor_fusion[i][2];
+            double vx = sensor_fusion[i][3];
+            double vy = sensor_fusion[i][4];
+            double s = sensor_fusion[i][5];
+            double d = sensor_fusion[i][6];
+    
+            double speed = sqrt((vx*vx)+(vy*vy));
+            double next_x = x + (vx * (double)prev_size * 0.02);
+            double next_y = y + (vy * (double)prev_size * 0.02);
+            double next_s = s + speed * 1.0;
+            //double theta = atan2(vy,vx);
+    
+            int lane_id = (int)(((d - 2.0) / 4.0) + 0.5);
+            //cout << lane_id << endl;
+    
+            vector<double> prediction = {next_x, next_y, next_s, speed, vx, vy};
+    
+            this->predictions[lane_id].push_back(prediction);
+        }
+    }
+
+Those predictions are used in the following functions to calculate a valid behaviour for the EGO-vehicle.
+
+## Behaviour Planning
+
+The behaviour planner is always based on the last known position of the last given trajectory. 
+Thats the same time as the predicton function predicted the other vehicles.
+
+To start the Planning the algorithm finds the closest vehicles in the same lane as the EGO-vehicle. On in front of our car and one in the back.
+If there is no car in front of us closer as a calculated distance based on our own speed the car will speed up to the speed limit. 
+Regarding to the max acceleration.
+
+If there is a slower car in front of us and to close we detect if it is save to change to a neighboured lane.
+Therefore we look for the closest cars in those lanes, again front and rear.
+In regard to german traffic I prefer left lanes. So if both neighboured lanes are available I make a left change.
+
+Given the situation, that it is not save to change lanes anyhow. The car slowes down to avoid a crash with the car in front.
+
+    void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size){
+        /** Plan the behaviour of the EGO-vehicle **/
+    
+        if(prev_size > 0){
+            this->car_s = end_path_s;
+            this->car_d = end_path_d;
+            this->car_lane_id = (int)(((this->car_d - 2.0) / 4.0) + 0.5);
+        }
+    
+        vector<double> front_rear_vehicles;
+        front_rear_vehicles = find_next_vehicles_in_lane(this->goal_lane);
+    
+        if(this->goal_lane == this->car_lane_id) {
+            if (front_rear_vehicles[0] < (this->car_speed + 10.0)) {
+                int left_lane = this->car_lane_id - 1;
+                int right_lane = this->car_lane_id + 1;
+                //int left_left_lane = this->car_lane_id -2;
+                //int right_right_lane = this->car_lane_id +2;
+    
+                bool lane_change = false;
+                vector<double> lane_change_front_rear_vehicles;
+    
+                if (!lane_change && left_lane >= 0) {
+                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(left_lane);
+                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) &&
+                        (lane_change_front_rear_vehicles[1] < -(10.0))) {
+                        this->goal_lane = this->car_lane_id - 1;
+                        lane_change = true;
+                    }
+                }
+    
+                if (!lane_change && right_lane < 3) {
+                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(right_lane);
+                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) &&
+                        (lane_change_front_rear_vehicles[1] < -(10.0))) {
+                        this->goal_lane = this->car_lane_id + 1;
+                        lane_change = true;
+                    }
+                }
+                
+                if (!lane_change) {
+                    this->goal_speed -= mac_acc;
+                }
+    
+            } else if (this->goal_speed < this->speed_limit) {
+                this->goal_speed += mac_acc;
+            }
+        }
+    
+    }
+
+After this planner, the vehicle has a given goal lane and speed for its current situation.
+
+## Trajectory Generation
+
+Given my future goal-lane and -speed the algorithm creates a smooth trajectory, which the car can follow.
+Therefore I take the last 2 points of my current trajectory and add 3 more points in further distances (30, 60, 90) and on the goal lane.
+Those points are used to avoid sudden changes in ego-yaw and to create a smooth path without jerk.
+Therefore I use the given Spline library.
+
+Then I break down the calculated spline into pieces, that follow the rules of my current goal speed.
+Based on those smaller pieces and the rest of the last created trajectory I create the new trajectory by adding new points to the end.
+
+
+
+    void PP::create_trajectory(int prev_size){
+        /** Create a smooth trajectory in regard to the given criteria **/
+    
+        int current_path_point = this->number_of_points - prev_size;
+        cout << "NEW TRAJECTORY after: " << current_path_point << " Points" << endl;
+    
+        vector<double> waypoints_x;
+        vector<double> waypoints_y;
+    
+        double last_ref_x;
+        double last_ref_y;
+        double ref_x;
+        double ref_y;
+        double ref_yaw;
+    
+        if(current_path_point > 48){
+            last_ref_x = this->car_x - cos(this->car_yaw);
+            last_ref_y = this->car_y - sin(this->car_yaw);
+    
+            ref_x = this->car_x;
+            ref_y = this->car_y;
+            ref_yaw = this->car_yaw;
+    
+        }else{
+            last_ref_x = this->trajectory_x[50-2];
+            last_ref_y = this->trajectory_y[50-2];
+    
+            ref_x = this->trajectory_x[50-1];
+            ref_y = this->trajectory_y[50-1];
+            ref_yaw = atan2(ref_y-last_ref_y,ref_x-last_ref_x);
+        }
+    
+        waypoints_x.push_back(last_ref_x);
+        waypoints_y.push_back(last_ref_y);
+    
+        waypoints_x.push_back(ref_x);
+        waypoints_y.push_back(ref_y);
+    
+        vector<double> next_waypoint_30 = getXY(this->car_s+30, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
+        waypoints_x.push_back(next_waypoint_30[0]);
+        waypoints_y.push_back(next_waypoint_30[1]);
+    
+        vector<double> next_waypoint_60 = getXY(this->car_s+60, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
+        waypoints_x.push_back(next_waypoint_60[0]);
+        waypoints_y.push_back(next_waypoint_60[1]);
+    
+        vector<double> next_waypoint_90 = getXY(this->car_s+90, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
+        waypoints_x.push_back(next_waypoint_90[0]);
+        waypoints_y.push_back(next_waypoint_90[1]);
+    
+    
+        for (int i=0;i<waypoints_x.size();i++){
+            double shift_x = waypoints_x[i] - ref_x;
+            double shift_y = waypoints_y[i] - ref_y;
+    
+            waypoints_x[i] = shift_x * cos(-ref_yaw) - shift_y * sin(-ref_yaw);
+            waypoints_y[i] = shift_x * sin(-ref_yaw) + shift_y * cos(-ref_yaw);
+        }
+    
+        tk::spline s;
+        s.set_points(waypoints_x,waypoints_y);
+    
+        if(this->trajectory_x.size() > 0){
+            this->trajectory_x.erase(this->trajectory_x.begin(), this->trajectory_x.begin()+current_path_point);
+            this->trajectory_y.erase(this->trajectory_y.begin(), this->trajectory_y.begin()+current_path_point);
+        }
+    
+        double horizon_x = 30.0;
+        double horizon_y = s(horizon_x);
+        double horizon_dist = sqrt((horizon_x*horizon_x)+(horizon_y*horizon_y));
+    
+        double x_counter = 0.0;
+        double delta_x = horizon_x * (0.02 * this->goal_speed / 2.24) / horizon_dist;
+    
+        for (int i=1;i<=current_path_point;i++){
+            x_counter = x_counter + delta_x;
+            double y_counter = s(x_counter);
+    
+            double next_x = (x_counter * cos(ref_yaw) - y_counter * sin(ref_yaw));
+            double next_y = (x_counter * sin(ref_yaw) + y_counter * cos(ref_yaw));
+    
+            next_x += ref_x;
+            next_y += ref_y;
+    
+            this->trajectory_x.push_back(next_x);
+            this->trajectory_y.push_back(next_y);
+    
+        }
+    
+    }
+
    
-### Simulator. You can download the Term3 Simulator BETA which contains the Path Planning Project from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-
-In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 50 m/s^3.
-
-#### The map of the highway is in data/highway_map.txt
-Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoint's map coordinate position, the s value is the distance along the road to get to that waypoint in meters, the dx and dy values define the unit normal vector pointing outward of the highway loop.
-
-The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
-
-## Basic Build Instructions
-
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
-
-Here is the data provided from the Simulator to the C++ Program
-
-#### Main car's localization Data (No Noise)
-
-["x"] The car's x position in map coordinates
-
-["y"] The car's y position in map coordinates
-
-["s"] The car's s position in frenet coordinates
-
-["d"] The car's d position in frenet coordinates
-
-["yaw"] The car's yaw angle in the map
-
-["speed"] The car's speed in MPH
-
-#### Previous path data given to the Planner
-
-//Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
-
-["previous_path_x"] The previous list of x points previously given to the simulator
-
-["previous_path_y"] The previous list of y points previously given to the simulator
-
-#### Previous path's end s and d values 
-
-["end_path_s"] The previous list's last point's frenet s value
-
-["end_path_d"] The previous list's last point's frenet d value
-
-#### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
-
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
-
-## Details
-
-1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
-
-2. There will be some latency between the simulator running and the path planner returning a path, with optimized code usually its not very long maybe just 1-3 time steps. During this delay the simulator will continue using points that it was last given, because of this its a good idea to store the last points you have used so you can have a smooth transition. previous_path_x, and previous_path_y can be helpful for this transition since they show the last points given to the simulator controller with the processed points already removed. You would either return a path that extends this previous path or make sure to create a new path that has a smooth transition with this last path.
-
-## Tips
-
-A really helpful resource for doing this project and creating smooth trajectories was using http://kluge.in-chemnitz.de/opensource/spline/, the spline function is in a single hearder file is really easy to use.
-
----
-
-## Dependencies
-
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets 
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+   ## Reflection
+   
+   

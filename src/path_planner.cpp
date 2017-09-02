@@ -17,7 +17,6 @@ PP::PP() {
     this->car_d = 0.0;
     this->car_yaw = 0.0;
     this->car_speed = 0.0;
-    this->car_acceleration = 0.0;
 
     this->number_of_points = 50;
     this->car_lane_id = 1;
@@ -30,8 +29,7 @@ PP::PP() {
 PP::~PP() {}
 
 void PP::init_map(vector<double> maps_s, vector<double> maps_x, vector<double> maps_y, vector<double> maps_dx, vector<double> maps_dy){
-
-
+    /** Initialize the map in the PathPlanner Object **/
     this->maps_x = maps_x;
     this->maps_y = maps_y;
     this->maps_s = maps_s;
@@ -84,8 +82,7 @@ void PP::update_car_status(vector<double> car_status){
 }
 
 void PP::define_goal_state(vector<double> initial_state){
-    //vector<double> frenet_pos = getFrenet(initial_state[0], initial_state[3], atan2(initial_state[4],initial_state[1]), this->maps_x, this->maps_y);
-
+    /** CURRENTLY NOT USE **/
     this->goal_s = initial_state[0] + this->behaviour_speed;
 
     this->goal_d = this->behaviour_lane_id * 4.0 + 2.0;
@@ -96,7 +93,6 @@ void PP::define_goal_state(vector<double> initial_state){
     int nwp = NextWaypoint(this->goal_x, this->goal_y, this->car_yaw, this->maps_x, this->maps_y);
     double theta = atan2(this->maps_dy[nwp], this->maps_dx[nwp]) + (pi()/2.0);
     if(theta >= (2.0*pi())){theta -= 2*pi();}
-    this->goal_yaw = theta;
     this->goal_speed = this->speed_limit;
 
     cout << "X_Diff: " << initial_state[0] << " " << this->goal_x << endl;
@@ -104,7 +100,7 @@ void PP::define_goal_state(vector<double> initial_state){
 }
 
 void PP::predict(json sensor_fusion, int prev_size) {
-
+    /** Predict all other vehicles detected by SensorFusion **/
     this->predictions[0].erase(this->predictions[0].begin(), this->predictions[0].end());
     this->predictions[1].erase(this->predictions[1].begin(), this->predictions[1].end());
     this->predictions[2].erase(this->predictions[2].begin(), this->predictions[2].end());
@@ -136,7 +132,7 @@ void PP::predict(json sensor_fusion, int prev_size) {
 }
 
 void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size){
-    /** vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed}; */
+    /** Plan the behaviour of the EGO-vehicle **/
 
     if(prev_size > 0){
         this->car_s = end_path_s;
@@ -175,29 +171,6 @@ void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size)
                 }
             }
 
-            /*
-            if(!lane_change && this->car_lane_id!= 1){
-                vector<double> lane_pass_front_rear_vehicles;
-                if (!lane_change && left_left_lane >= 0){
-                    lane_pass_front_rear_vehicles = find_next_vehicles_in_lane(left_left_lane + 1);
-                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(left_left_lane);
-                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) && (lane_change_front_rear_vehicles[1] < -(10.0)) && (lane_pass_front_rear_vehicles[0] > (10.0)) && (lane_pass_front_rear_vehicles[1] < -(10.0))){
-                        this->car_lane_id -= 1;
-                        lane_change = true;
-                    }
-                }
-                if (!lane_change && right_right_lane >= 0){
-                    lane_pass_front_rear_vehicles = find_next_vehicles_in_lane(right_right_lane - 1);
-                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(right_right_lane);
-                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) && (lane_change_front_rear_vehicles[1] < -(10.0)) && (lane_pass_front_rear_vehicles[0] > (10.0)) && (lane_pass_front_rear_vehicles[1] < -(10.0))){
-                        this->car_lane_id += 1;
-                        lane_change = true;
-                    }
-                }
-            }
-             */
-
-
             if (!lane_change) {
                 this->goal_speed -= mac_acc;
             }
@@ -209,10 +182,10 @@ void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size)
 
 }
 
-void PP::create_trajectory(json previous_path_x, json previous_path_y){
-    /** vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed}; */
+void PP::create_trajectory(int prev_size){
+    /** Create a smooth trajectory in regard to the given criteria **/
 
-    int current_path_point = this->number_of_points - previous_path_x.size();
+    int current_path_point = this->number_of_points - prev_size;
     cout << "NEW TRAJECTORY after: " << current_path_point << " Points" << endl;
 
     vector<double> waypoints_x;
@@ -231,9 +204,6 @@ void PP::create_trajectory(json previous_path_x, json previous_path_y){
         ref_x = this->car_x;
         ref_y = this->car_y;
         ref_yaw = this->car_yaw;
-
-        //this->trajectory_x.push_back(ref_x);
-        //this->trajectory_y.push_back(ref_y);
 
     }else{
         last_ref_x = this->trajectory_x[50-2];
@@ -271,7 +241,6 @@ void PP::create_trajectory(json previous_path_x, json previous_path_y){
         waypoints_y[i] = shift_x * sin(-ref_yaw) + shift_y * cos(-ref_yaw);
     }
 
-    // create a spline
     tk::spline s;
     s.set_points(waypoints_x,waypoints_y);
 
@@ -327,6 +296,7 @@ vector<double> PP::find_next_vehicles_in_lane(int lane_id){
 
 
 vector< double> PP::JMT(vector< double> start, vector <double> end, double T){
+    /** CURRENTLY NOT USE **/
     /*
     Calculate the Jerk Minimizing Trajectory that connects the initial state
     to the final state in time T.
