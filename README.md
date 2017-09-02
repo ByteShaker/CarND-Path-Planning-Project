@@ -1,4 +1,4 @@
-[video1]: ./Path_Planing_final
+[video1]: ./Path_Planing_final.m4v
 
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
@@ -7,7 +7,7 @@ Solution of Friedrich Schweizer
 
 ##Project Overview
 
-### In THIS_VIDEO you will find the following criteria solved:
+### In [THIS VIDEO](./Path_Planing_final.m4v) you will find the following criteria solved:
  
  + The Car is able to drive at least 4.32 miles without incident.
  
@@ -242,6 +242,19 @@ Based on those smaller pieces and the rest of the last created trajectory I crea
     }
 
    
-   ## Reflection
-   
+## Reflection
+
+Since I was on vacation for more than 1 month this time, I only focused to meet the minimum rubric. 
+The behaviour planner is pretty basic, but it does make valid decisions and drives savely over the loop.
+Also the achieved speed is close to the speed limit and everything is smooth.
+
+Nevertheless I still do see some room for perfection:
+* Sometimes cars do change lanes unexpectedly. Therefore the prediction function could also try to predict lane changes of given cars.
+
+* The behaviour planner could make the decisions based on more vehicles than only the closest ones. This could lead to a trajectory, that also plans the speed of the cars in front and makes better decisions on the long run.
+
+* Also looking for explicit gaps, when the car is locked in and only can slow down. Could speed up lane changes, when needed.
+
+
+Altogether I am pretty happy with my project solution. I am looking forward to add more refinement after the term is over.
    
