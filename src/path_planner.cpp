@@ -8,7 +8,8 @@
  * Initialize PP
  */
 PP::PP() {
-    this->speed_limit = 49.5; //mph
+    this->speed_limit = 49.3; //mph
+    this->mac_acc = .55;
 
     this->car_x = 0.0;
     this->car_y = 0.0;
@@ -20,6 +21,7 @@ PP::PP() {
 
     this->number_of_points = 50;
     this->car_lane_id = 1;
+    this->goal_lane = 1;
 
     this->goal_speed = 0.0;
 
@@ -136,52 +138,74 @@ void PP::predict(json sensor_fusion, int prev_size) {
 void PP::behaviour_planning(double end_path_s, double end_path_d, int prev_size){
     /** vector<double> car_status = {car_x, car_y, car_s, car_d, car_yaw, car_speed}; */
 
-    double max_s = 6945.554;
-
     if(prev_size > 0){
         this->car_s = end_path_s;
         this->car_d = end_path_d;
         this->car_lane_id = (int)(((this->car_d - 2.0) / 4.0) + 0.5);
     }
 
-    int next_vehicle_in_lane_id;
-    double next_vehicle_in_lane_s = max_s;
-    for(int i=0; i<this->predictions[this->car_lane_id].size(); i++){
-        double delta_s = (this->predictions[this->car_lane_id][i][2]-this->car_s);
-        if(delta_s < -max_s/2.0){
-            delta_s += max_s;
+    vector<double> front_rear_vehicles;
+    front_rear_vehicles = find_next_vehicles_in_lane(this->goal_lane);
+
+    if(this->goal_lane == this->car_lane_id) {
+        if (front_rear_vehicles[0] < (this->car_speed + 10.0)) {
+            int left_lane = this->car_lane_id - 1;
+            int right_lane = this->car_lane_id + 1;
+            //int left_left_lane = this->car_lane_id -2;
+            //int right_right_lane = this->car_lane_id +2;
+
+            bool lane_change = false;
+            vector<double> lane_change_front_rear_vehicles;
+
+            if (!lane_change && left_lane >= 0) {
+                lane_change_front_rear_vehicles = find_next_vehicles_in_lane(left_lane);
+                if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) &&
+                    (lane_change_front_rear_vehicles[1] < -(10.0))) {
+                    this->goal_lane = this->car_lane_id - 1;
+                    lane_change = true;
+                }
+            }
+
+            if (!lane_change && right_lane < 3) {
+                lane_change_front_rear_vehicles = find_next_vehicles_in_lane(right_lane);
+                if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) &&
+                    (lane_change_front_rear_vehicles[1] < -(10.0))) {
+                    this->goal_lane = this->car_lane_id + 1;
+                    lane_change = true;
+                }
+            }
+
+            /*
+            if(!lane_change && this->car_lane_id!= 1){
+                vector<double> lane_pass_front_rear_vehicles;
+                if (!lane_change && left_left_lane >= 0){
+                    lane_pass_front_rear_vehicles = find_next_vehicles_in_lane(left_left_lane + 1);
+                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(left_left_lane);
+                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) && (lane_change_front_rear_vehicles[1] < -(10.0)) && (lane_pass_front_rear_vehicles[0] > (10.0)) && (lane_pass_front_rear_vehicles[1] < -(10.0))){
+                        this->car_lane_id -= 1;
+                        lane_change = true;
+                    }
+                }
+                if (!lane_change && right_right_lane >= 0){
+                    lane_pass_front_rear_vehicles = find_next_vehicles_in_lane(right_right_lane - 1);
+                    lane_change_front_rear_vehicles = find_next_vehicles_in_lane(right_right_lane);
+                    if ((lane_change_front_rear_vehicles[0] > (this->car_speed + 10.0)) && (lane_change_front_rear_vehicles[1] < -(10.0)) && (lane_pass_front_rear_vehicles[0] > (10.0)) && (lane_pass_front_rear_vehicles[1] < -(10.0))){
+                        this->car_lane_id += 1;
+                        lane_change = true;
+                    }
+                }
+            }
+             */
+
+
+            if (!lane_change) {
+                this->goal_speed -= mac_acc;
+            }
+
+        } else if (this->goal_speed < this->speed_limit) {
+            this->goal_speed += mac_acc;
         }
-
-        if((delta_s>0.0)&&(delta_s < next_vehicle_in_lane_s)){
-            next_vehicle_in_lane_s = delta_s;
-        }
     }
-
-    cout << this->car_lane_id << " " << this->predictions[1].size() << endl;
-
-    if (next_vehicle_in_lane_s < 30.0){
-        this->goal_speed -= .225;
-        //this->car_lane_id -= 1;
-    }else if(this->goal_speed < this->speed_limit){
-        this->goal_speed += .225;
-    }
-
-    /*
-    this->behaviour_speed += 0.2;
-    if(this->behaviour_speed > this->speed_limit){
-        this->behaviour_speed = this->speed_limit;
-    }
-    this->behaviour_lane_id = this->car_lane_id;
-
-    if(next_vehicle_in_lane_s < 35.0){
-        this->behaviour_lane_id += 1;
-    }else{
-        this->behaviour_lane_id -= 1;
-        if(this->behaviour_lane_id < 0){
-            this->behaviour_lane_id = 0;
-        }
-    }
-    */
 
 }
 
@@ -226,15 +250,15 @@ void PP::create_trajectory(json previous_path_x, json previous_path_y){
     waypoints_x.push_back(ref_x);
     waypoints_y.push_back(ref_y);
 
-    vector<double> next_waypoint_30 = getXY(this->car_s+30, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    vector<double> next_waypoint_30 = getXY(this->car_s+30, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
     waypoints_x.push_back(next_waypoint_30[0]);
     waypoints_y.push_back(next_waypoint_30[1]);
 
-    vector<double> next_waypoint_60 = getXY(this->car_s+60, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    vector<double> next_waypoint_60 = getXY(this->car_s+60, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
     waypoints_x.push_back(next_waypoint_60[0]);
     waypoints_y.push_back(next_waypoint_60[1]);
 
-    vector<double> next_waypoint_90 = getXY(this->car_s+90, 2+4*this->car_lane_id, this->maps_s, this->maps_x, this->maps_y);
+    vector<double> next_waypoint_90 = getXY(this->car_s+90, 2+4*this->goal_lane, this->maps_s, this->maps_x, this->maps_y);
     waypoints_x.push_back(next_waypoint_90[0]);
     waypoints_y.push_back(next_waypoint_90[1]);
 
@@ -278,6 +302,27 @@ void PP::create_trajectory(json previous_path_x, json previous_path_y){
 
     }
 
+}
+
+
+vector<double> PP::find_next_vehicles_in_lane(int lane_id){
+    double max_s = 6945.554;
+
+    double front_vehicle_in_lane_s = max_s;
+    double back_vehicle_in_lane_s = -max_s;
+    for(int i=0; i<this->predictions[lane_id].size(); i++){
+        double delta_s = (this->predictions[lane_id][i][2]-this->car_s);
+        if(delta_s < -max_s/2.0){
+            delta_s += max_s;
+        }
+
+        if((delta_s>0.0)&&(delta_s < front_vehicle_in_lane_s)){
+            front_vehicle_in_lane_s = delta_s;
+        }else if((delta_s<0.0)&&(delta_s > back_vehicle_in_lane_s)){
+            back_vehicle_in_lane_s = delta_s;
+        }
+    }
+    return {front_vehicle_in_lane_s, back_vehicle_in_lane_s};
 }
 
 

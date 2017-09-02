@@ -30,6 +30,7 @@ public:
 
     int number_of_points;
     double speed_limit;
+    double mac_acc;
 
     vector<double> maps_s;
     vector<double> maps_x;
@@ -45,6 +46,8 @@ public:
     double car_speed;
     double car_acceleration;
     int car_lane_id;
+
+    int goal_lane;
 
     double goal_x;
     double goal_y;
@@ -76,6 +79,7 @@ public:
 
     void init_map(vector<double> maps_s, vector<double> maps_x, vector<double> maps_y, vector<double> maps_dx, vector<double> maps_dy);
 
+    vector<double> find_next_vehicles_in_lane(int lane_id);
     vector<double> JMT(vector< double> start, vector <double> end, double T);
 
     void update_car_status(vector<double> car_status);
